@@ -27,3 +27,16 @@ pub fn get_hash_data_from_redis() -> Result<(), redis::RedisError> {
 
     Ok(())
 }
+
+
+///TODO:
+/// Figure out a way to be able to get a hold of multiple dynamic keys being inserted in the db
+/// Figure out a way to serialize the data into json so that it can be passed to a frontend
+/// 
+/// 
+/// 
+/// 
+/// 
+/// 
+/// 
+/// 
