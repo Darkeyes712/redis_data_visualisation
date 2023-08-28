@@ -1,33 +1,68 @@
-use redis::Commands;
+use redis::{Commands, Connection, RedisResult};
+use serde::ser::Error;
+use serde_json::{json, Error as JsonError, Value};
 use std::collections::HashMap;
 
-pub fn get_hash_data_from_redis() -> Result<(), redis::RedisError> {
-    let client = redis::Client::open("redis://127.0.0.1/")?;
-    let mut connection = client.get_connection()?;
+trait Redis {
+    fn create_connection(&self) -> Result<Connection, redis::RedisError>;
+}
 
-    let hash_name = "binance_ETHUSDT"; // put in the name of the key
-    let hash_fields: Vec<&str> = vec!["bid", "bidQ", "ask", "askQ", "price"]; // Fetch the hash fields and values
-    let mut hash_map = HashMap::new(); // create a new HashMap
+pub struct RedisClass {}
 
-    for field in &hash_fields {
-        let value: Option<String> = connection.hget(hash_name, field)?;
-        if let Some(value_str) = value {
-            if let Ok(value_f64) = value_str.parse::<f64>() {
-                hash_map.insert(*field, value_f64);
-            } else {
-                eprintln!("Failed to parse value as f64: {}", value_str);
+impl Redis for RedisClass {
+    fn create_connection(&self) -> Result<Connection, redis::RedisError> {
+        let client = redis::Client::open("redis://127.0.0.1/")?;
+        let connection = client.get_connection()?;
+
+        Ok(connection)
+    }
+}
+
+impl RedisClass {
+    pub fn get_all_keys(&self) -> RedisResult<Vec<String>> {
+        let mut connection = self.create_connection()?;
+        let keys: Vec<String> = connection.scan_match("*")?.collect();
+
+        Ok(keys)
+    }
+
+    pub fn fetch_data_for_hash_keys(
+        &self,
+    ) -> RedisResult<HashMap<String, HashMap<String, String>>> {
+        let mut connection = self.create_connection()?;
+        let hash_keys = self.get_all_keys()?;
+
+        let mut data_map: HashMap<String, HashMap<String, String>> = HashMap::new();
+
+        for hash_key in hash_keys {
+            let hash_data: HashMap<String, String> = connection.hgetall(&hash_key)?;
+            data_map.insert(hash_key, hash_data);
+        }
+
+        println!("{:?}", data_map);
+        Ok(data_map)
+    }
+
+    pub fn convert_data_to_json(&self) -> Result<String, JsonError> {
+        match self.fetch_data_for_hash_keys() {
+            Ok(data) => {
+                let mut json_map: HashMap<String, Value> = HashMap::new();
+
+                for (key, value) in data {
+                    json_map.insert(key, json!(value));
+                }
+
+                let json_result = serde_json::to_string(&json_map)?;
+                Ok(json_result)
             }
+            Err(err) => Err(JsonError::custom(format!("Redis error: {}", err))),
         }
     }
-
-    // Iterate over the hash fields and values
-    for (field, value) in &hash_map {
-        println!("{}: {}", field, value);
-    }
-
-    Ok(())
 }
 
 //TODO:
-// Figure out a way to be able to get a hold of multiple dynamic keys being inserted in the db
-// Figure out a way to serialize the data into json so that it can be passed to a frontend
+// Figure out a way to be able to get a hold of multiple dynamic keys being inserted in the db - Done
+// Figure out a way to get all data for all keys and loop through it - Done
+// Figure out how to group all data (data from each hash that we get from Redis) and output it as json - Done
+// Build the API
+// Find a way to pass the data to the frontend
